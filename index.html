@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mini Minecraft</title>
+
+<style>
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  font-family: Arial, sans-serif;
+  background: #87ceeb;
+}
+
+#game {
+  width: 100vw;
+  height: 100vh;
+  display: block;
+}
+
+#info {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  color: white;
+  background: #0008;
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  z-index: 2;
+}
+
+#crosshair {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: white;
+  font-size: 28px;
+  text-shadow: 1px 1px 3px black;
+  pointer-events: none;
+}
+
+#controls {
+  position: fixed;
+  bottom: 20px;
+  left: 15px;
+  display: grid;
+  grid-template-columns: repeat(3, 52px);
+  gap: 5px;
+  z-index: 3;
+}
+
+button {
+  border: 2px solid #fff9;
+  border-radius: 9px;
+  background: #222b;
+  color: white;
+  font-size: 22px;
+  padding: 12px;
+  touch-action: none;
+}
+
+#controls button {
+  width: 52px;
+  height: 52px;
+  padding: 0;
+}
+
+#up { grid-column: 2; }
+#left { grid-column: 1; grid-row: 2; }
+#down { grid-column: 2; grid-row: 2; }
+#right { grid-column: 3; grid-row: 2; }
+
+#actions {
+  position: fixed;
+  bottom: 28px;
+  right: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 3;
+}
+
+#actions button {
+  font-size: 15px;
+  padding: 13px;
+}
+
+#hint {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  color: white;
+  background: #0008;
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  z-index: 2;
+}
+
+#start {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 5;
+  text-align: center;
+  color: white;
+  background: #152515e8;
+  padding: 24px;
+  border-radius: 14px;
+  width: min(90%, 360px);
+}
+
+#start button {
+  background: #458b35;
+  font-size: 18px;
+}
+
+@media (min-width: 900px) {
+  #controls, #actions { opacity: .75; }
+}
+</style>
+</head>
+
+<body>
+<div id="info">
+  <b>MINI MINECRAFT</b><br>
+  Blocks: <span id="count">0</span><br>
+  Selected: <span id="selected">Grass</span>
+</div>
+
+<div id="hint">
+  Desktop: WASD + mouse<br>
+  Click to break · Right-click to place
+</div>
+
+<div id="crosshair">+</div>
+
+<div id="controls">
+  <button id="up">▲</button>
+  <button id="left">◀</button>
+  <button id="down">▼</button>
+  <button id="right">▶</button>
+</div>
+
+<div id="actions">
+  <button id="break">⛏ Break</button>
+  <button id="place">＋ Place</button>
+  <button id="change">🎨 Block</button>
+</div>
+
+<div id="start">
+  <h2>⛏ Mini Minecraft</h2>
+  <p>Explore your block world, break blocks, and build anything you like!</p>
+  <button id="play">START GAME</button>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script>
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb);
+scene.fog = new THREE.Fog(0x87ceeb, 18, 55);
+
+const camera = new THREE.PerspectiveCamera(
+  75, window.innerWidth / window.innerHeight, 0.1, 1000
+);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+renderer.domElement.id = "game";
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x657344, 2));
+
+const sun = new THREE.DirectionalLight(0xffffff, 2);
+sun.position.set(-10, 20, 10);
+sun.castShadow = true;
+scene.add(sun);
+
+const materials = [
+  new THREE.MeshLambertMaterial({ color: 0x55aa33 }),
+  new THREE.MeshLambertMaterial({ color: 0x8b5a2b }),
+  new THREE.MeshLambertMaterial({ color: 0x888888 }),
+  new THREE.MeshLambertMaterial({ color: 0xe4d29a }),
+  new THREE.MeshLambertMaterial({ color: 0x3979bd }),
+  new THREE.MeshLambertMaterial({ color: 0xb56a36 })
+];
+
+const blockNames = ["Grass", "Dirt", "Stone", "Sand", "Blue", "Wood"];
+const cubeGeometry = new THREE.BoxGeometry(1, 1, 1);
+const blocks = [];
+const blockMap = new Map();
+
+function key(x, y, z) {
+  return `${x},${y},${z}`;
+}
+
+function addBlock(x, y, z, type = 0) {
+  const k = key(x, y, z);
+  if (blockMap.has(k)) return null;
+
+  const mesh = new THREE.Mesh(cubeGeometry, materials[type]);
+  mesh.position.set(x, y, z);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  mesh.userData = { x, y, z, type };
+
+  scene.add(mesh);
+  blocks.push(mesh);
+  blockMap.set(k, mesh);
+  updateCount();
+  return mesh;
+}
+
+function removeBlock(mesh) {
+  if (!mesh) return;
+  const { x, y, z } = mesh.userData;
+  scene.remove(mesh);
+  blockMap.delete(key(x, y, z));
+  const i = blocks.indexOf(mesh);
+  if (i !== -1) blocks.splice(i, 1);
+  updateCount();
+}
+
+function updateCount() {
+  document.getElementById("count").textContent = blocks.length;
+}
+
+// Generate a block landscape.
+for (let x = -12; x <= 12; x++) {
+  for (let z = -12; z <= 12; z++) {
+    const height = Math.floor(
+      1 + Math.sin(x * 0.45) * 0.8 +
+      Math.cos(z * 0.35) * 0.7
+    );
+
+    for (let y = -2; y <= height; y++) {
+      let type = y === height ? 0 : (y < height - 1 ? 2 : 1);
+      addBlock(x, y, z, type);
+    }
+  }
+}
+
+// A few simple trees.
+function makeTree(x, z) {
+  for (let y = 2; y <= 4; y++) addBlock(x, y, z, 5);
+
+  for (let dx = -2; dx <= 2; dx++) {
+    for (let dz = -2; dz <= 2; dz++) {
+      for (let dy = 4; dy <= 6; dy++) {
+        if (Math.abs(dx) + Math.abs(dz) < 4) {
+          addBlock(x + dx, dy, z + dz, 0);
+        }
+      }
+    }
+  }
+}
+makeTree(-7, -5);
+makeTree(6, -6);
+makeTree(8, 5);
+
+camera.position.set(0, 4, 7);
+camera.rotation.order = "YXZ";
+
+let yaw = 0;
+let pitch = -0.15;
+let selectedType = 0;
+let playing = false;
+let isLocked = false;
+
+const keys = {};
+const raycaster = new THREE.Raycaster();
+raycaster.far = 6;
+
+function aimCamera() {
+  camera.rotation.set(pitch, yaw, 0, "YXZ");
+}
+
+function targetBlock() {
+  raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+  const hits = raycaster.intersectObjects(blocks, false);
+  return hits.length ? hits[0] : null;
+}
+
+function breakTarget() {
+  const hit = targetBlock();
+  if (hit) removeBlock(hit.object);
+}
+
+function placeTarget() {
+  const hit = targetBlock();
+  if (!hit) return;
+
+  const p = hit.object.position.clone()
+    .add(hit.face.normal);
+
+  const x = Math.round(p.x);
+  const y = Math.round(p.y);
+  const z = Math.round(p.z);
+
+  // Keep blocks away from the player's body.
+  const dx = Math.abs(x - camera.position.x);
+  const dz = Math.abs(z - camera.position.z);
+  if (dx < 1 && dz < 1 && Math.abs(y - camera.position.y) < 2) {
+    return;
+  }
+
+  addBlock(x, y, z, selectedType);
+}
+
+document.getElementById("play").addEventListener("click", () => {
+  document.getElementById("start").style.display = "none";
+  playing = true;
+  renderer.domElement.requestPointerLock?.();
+});
+
+renderer.domElement.addEventListener("click", () => {
+  if (!playing) return;
+  if (window.matchMedia("(pointer:fine)").matches) {
+    renderer.domElement.requestPointerLock?.();
+    if (isLocked) breakTarget();
+  } else {
+    breakTarget();
+  }
+});
+
+document.addEventListener("pointerlockchange", () => {
+  isLocked = document.pointerLockElement === renderer.domElement;
+});
+
+document.addEventListener("mousemove", e => {
+  if (!isLocked || !playing) return;
+  yaw -= e.movementX * 0.002;
+  pitch -= e.movementY * 0.002;
+  pitch = Math.max(-1.45, Math.min(1.45, pitch));
+  aimCamera();
+});
+
+document.addEventListener("contextmenu", e => e.preventDefault());
+renderer.domElement.addEventListener("contextmenu", e => {
+  if (playing) placeTarget();
+});
+
+document.addEventListener("keydown", e => {
+  keys[e.code] = true;
+  if (e.code === "Space") keys.Space = true;
+  if (e.code === "KeyE") placeTarget();
+  if (e.code === "KeyQ") breakTarget();
+});
+
+document.addEventListener("keyup", e => keys[e.code] = false);
+
+document.getElementById("break").addEventListener("click", breakTarget);
+document.getElementById("place").addEventListener("click", placeTarget);
+document.getElementById("change").addEventListener("click", () => {
+  selectedType = (selectedType + 1) % materials.length;
+  document.getElementById("selected").textContent = blockNames[selectedType];
+});
+
+// Mobile movement buttons.
+function bindMove(id, code) {
+  const button = document.getElementById(id);
+  button.addEventListener("pointerdown", e => {
+    e.preventDefault();
+    keys[code] = true;
+    button.setPointerCapture(e.pointerId);
+  });
+  const stop = () => keys[code] = false;
+  button.addEventListener("pointerup", stop);
+  button.addEventListener("pointercancel", stop);
+  button.addEventListener("lostpointercapture", stop);
+}
+
+bindMove("up", "KeyW");
+bindMove("down", "KeyS");
+bindMove("left", "KeyA");
+bindMove("right", "KeyD");
+
+// Touch-drag to look around on mobile.
+let lastTouch = null;
+renderer.domElement.addEventListener("touchstart", e => {
+  if (!playing || e.touches.length !== 1) return;
+  const t = e.touches[0];
+  lastTouch = { x: t.clientX, y: t.clientY };
+}, { passive: true });
+
+renderer.domElement.addEventListener("touchmove", e => {
+  if (!playing || !lastTouch || e.touches.length !== 1) return;
+  const t = e.touches[0];
+  yaw -= (t.clientX - lastTouch.x) * 0.006;
+  pitch -= (t.clientY - lastTouch.y) * 0.006;
+  pitch = Math.max(-1.45, Math.min(1.45, pitch));
+  lastTouch = { x: t.clientX, y: t.clientY };
+  aimCamera();
+}, { passive: true });
+
+renderer.domElement.addEventListener("touchend", () => {
+  lastTouch = null;
+});
+
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+
+  if (playing) {
+    const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+    const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+    const movement = new THREE.Vector3();
+
+    if (keys.KeyW || keys.ArrowUp) movement.add(forward);
+    if (keys.KeyS || keys.ArrowDown) movement.sub(forward);
+    if (keys.KeyD || keys.ArrowRight) movement.add(right);
+    if (keys.KeyA || keys.ArrowLeft) movement.sub(right);
+
+    if (movement.lengthSq() > 0) {
+      movement.normalize().multiplyScalar(5 * dt);
+      camera.position.add(movement);
+    }
+
+    camera.position.x = THREE.MathUtils.clamp(camera.position.x, -23, 23);
+    camera.position.z = THREE.MathUtils.clamp(camera.position.z, -23, 23);
+    camera.position.y = Math.max(1.6, camera.position.y);
+  }
+
+  renderer.render(scene, camera);
+}
+
+window.addEventListener("resize", () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+animate();
+</script>
+</body>
+</html>
